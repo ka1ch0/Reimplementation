@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
+import torch.autograd as autograd
 
 
 class HyperNetwork(nn.Module):
@@ -51,4 +52,53 @@ class HyperNetwork(nn.Module):
         out = h_final.reshape(self.out_size, self.in_size, self.f_size, self.f_size)
 
         return out
-        
+
+
+class GetSubnet(autograd.Function):
+    @staticmethod
+    def forward(ctx, scores, k):
+        # Get the subnetwork by sorting the scores and using the top k%
+        out = scores.clone()
+        _, idx = scores.flatten().sort()
+        j = int((1 - k) * scores.numel())
+
+        # flat_out and out access the same memory.
+        flat_out = out.flatten()
+        flat_out[idx[:j]] = 0
+        flat_out[idx[j:]] = 1
+
+        return out
+
+    @staticmethod
+    def backward(ctx, g):
+        # send the gradient g straight-through on the backward pass.
+        return g, None
+
+
+if __name__ == "__main__":
+    z = torch.randn(64).cuda()
+    hypernet = HyperNetwork()
+
+    score = hypernet(z)
+    mask = GetSubnet.apply(score, 0.5)
+    loss = mask.sum()
+
+    loss.backward()
+
+    print("score grad:")
+    print("=" * 50)
+    print(score.grad)
+
+    print("hypernet grad:")
+    print("=" * 50)
+    print("w1")
+    print(hypernet.w1.grad)
+    print("=" * 50)
+    print("w2")
+    print(hypernet.w2.grad)
+    print("=" * 50)
+    print("b1")
+    print(hypernet.b1.grad)
+    print("=" * 50)
+    print("b2")
+    print(hypernet.b2.grad)
